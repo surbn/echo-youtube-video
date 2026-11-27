@@ -1,0 +1,64 @@
+name: build-extension
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: 17
+          cache: 'gradle'
+
+      - name: Cook Variables
+        run: |
+          name=$(grep '^extName=' gradle.properties | cut -d'=' -f2)
+          echo "NAME=$name Extension" >> $GITHUB_ENV
+          id=$(grep '^extId=' gradle.properties | cut -d'=' -f2)
+          echo "TAG=$id" >> $GITHUB_ENV
+          version=$(echo ${{ github.event.head_commit.id }} | cut -c1-7)
+          echo "VERSION=v$version" >> $GITHUB_ENV
+          echo -e "## YouTube Video Extension for Echo\nVideo playback & video-to-audio mode enabled." > commit.txt
+          mkdir -p app/build
+          echo "APP_PATH=app/build/$id-$version.eapk" >> $GITHUB_ENV
+          chmod +x ./gradlew
+
+      - name: Build with Gradle
+        run: |
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ${{ env.APP_PATH }}
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/youtube_video.eapk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Youtube_video-eapk
+          path: app/build/youtube_video.eapk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          make_latest: true
+          tag_name: ${{ env.VERSION }}
+          body_path: commit.txt
+          name: ${{ env.VERSION }}
+          files: |
+            ${{ env.APP_PATH }}
+            app/build/youtube_video.eapk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
